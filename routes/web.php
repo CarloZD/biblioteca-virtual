@@ -14,6 +14,8 @@ Route::get('/', function () {
 // Rutas de autenticación
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
 Route::post('/login', [AuthController::class, 'login']);
+Route::get('/register', [AuthController::class, 'showRegisterForm'])->name('register'); 
+Route::post('/register', [AuthController::class, 'register']);
 Route::get('/logout', [AuthController::class, 'logout'])->name('logout');
 
 // Rutas protegidas (requieren login)
@@ -21,12 +23,21 @@ Route::middleware(['auth.custom'])->group(function () {
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     
-    // Rutas de libros (todos los usuarios pueden ver)
-    Route::resource('libros', LibroController::class);
+    // Rutas de libros - SOLO bibliotecarios pueden gestionar (crear, editar, eliminar)
+    Route::get('/libros', [LibroController::class, 'index'])->name('libros.index');
+    Route::get('/libros/{id}', [LibroController::class, 'show'])->name('libros.show');
     Route::get('/libros/buscar', [LibroController::class, 'buscar'])->name('libros.buscar');
     
-    // Rutas de usuarios (solo bibliotecarios)
+    // Rutas SOLO para bibliotecarios
     Route::middleware(['role:BIBLIOTECARIO'])->group(function () {
+        // Gestión completa de libros
+        Route::get('/libros/create', [LibroController::class, 'create'])->name('libros.create');
+        Route::post('/libros', [LibroController::class, 'store'])->name('libros.store');
+        Route::get('/libros/{id}/edit', [LibroController::class, 'edit'])->name('libros.edit');
+        Route::put('/libros/{id}', [LibroController::class, 'update'])->name('libros.update');
+        Route::delete('/libros/{id}', [LibroController::class, 'destroy'])->name('libros.destroy');
+        
+        // Gestión de usuarios
         Route::resource('usuarios', UsuarioController::class);
     });
 });
@@ -48,7 +59,7 @@ Route::get('/test-db', function () {
     }
 });
 
-// Ruta de debug temporal CORREGIDA
+// Ruta de debug temporal
 Route::get('/debug-login', function () {
     try {
         $email = 'admin@biblioteca.com';
