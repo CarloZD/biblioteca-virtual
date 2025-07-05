@@ -16,7 +16,7 @@ class UsuarioController extends Controller
         }
 
         try {
-            // Obtener todos los usuarios (Oracle devuelve propiedades en minúsculas)
+            // Obtener todos los usuarios usando consulta directa
             $usuarios = DB::connection('oracle')->select('
                 SELECT id, nombre, email, rol, activo, created_at 
                 FROM usuarios 
@@ -151,7 +151,7 @@ class UsuarioController extends Controller
         ]);
 
         try {
-            // Construir query de actualización usando nombres en minúsculas
+            // Construir query de actualización
             $updateFields = [
                 'nombre = ?',
                 'email = ?', 

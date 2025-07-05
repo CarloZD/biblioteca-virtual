@@ -4,109 +4,42 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Session;
 
-class AuthController extends Controller
+class DashboardController extends Controller
 {
-    public function showLoginForm()
+    public function index()
     {
-        return view('auth.login');
-    }
-
-    public function showRegisterForm()
-    {
-        return view('auth.register');
-    }
-
-    public function login(Request $request)
-    {
-        $request->validate([
-            'email' => 'required|email',
-            'password' => 'required'
-        ]);
+        // Verificar que el usuario esté logueado
+        if (!session('usuario_logueado')) {
+            return redirect()->route('login');
+        }
 
         try {
-            // Obtener usuario por email (Oracle devuelve propiedades en minúsculas)
-            $usuario = DB::connection('oracle')->select(
-                'SELECT id, nombre, email, password, rol, activo FROM usuarios WHERE UPPER(email) = UPPER(?) AND activo = 1',
-                [$request->email]
-            );
+            // Obtener estadísticas de la base de datos
+            $estadisticas = [
+                'total_usuarios' => 0,
+                'total_libros' => 0,
+                'libros_disponibles' => 0,
+                'usuario_nombre' => session('usuario_nombre'),
+                'usuario_rol' => session('usuario_rol')
+            ];
 
-            if (empty($usuario)) {
-                return back()->withErrors(['email' => 'Credenciales incorrectas'])->withInput();
-            }
+            // Contar usuarios activos (Oracle devuelve alias en minúsculas cuando usamos AS)
+            $usuarios = DB::connection('oracle')->select('SELECT COUNT(*) as total FROM usuarios WHERE activo = 1');
+            $estadisticas['total_usuarios'] = $usuarios[0]->total;
 
-            $user = $usuario[0];
+            // Contar libros totales
+            $libros = DB::connection('oracle')->select('SELECT COUNT(*) as total FROM libros');
+            $estadisticas['total_libros'] = $libros[0]->total;
 
-            // Oracle devuelve propiedades en minúsculas - usar la propiedad correcta
-            if (!Hash::check($request->password, $user->password)) {
-                return back()->withErrors(['email' => 'Credenciales incorrectas'])->withInput();
-            }
+            // Contar libros disponibles
+            $disponibles = DB::connection('oracle')->select('SELECT COUNT(*) as total FROM libros WHERE disponible = 1');
+            $estadisticas['libros_disponibles'] = $disponibles[0]->total;
 
-            // Crear sesión usando las propiedades en minúsculas
-            Session::put([
-                'usuario_id' => $user->id,
-                'usuario_nombre' => $user->nombre,
-                'usuario_email' => $user->email,
-                'usuario_rol' => $user->rol,
-                'usuario_logueado' => true
-            ]);
-
-            return redirect()->route('dashboard')->with('success', 'Bienvenido ' . $user->nombre);
+            return view('dashboard', $estadisticas);
 
         } catch (\Exception $e) {
-            return back()->withErrors(['email' => 'Error de conexión: ' . $e->getMessage()])->withInput();
+            return view('dashboard')->with('error', 'Error al cargar estadísticas: ' . $e->getMessage());
         }
-    }
-
-    public function register(Request $request)
-    {
-        $request->validate([
-            'nombre' => 'required|string|max:100',
-            'email' => 'required|email|unique:oracle.usuarios,email',
-            'password' => 'required|string|min:6|confirmed',
-        ]);
-
-        try {
-            // Usar procedimiento almacenado para crear usuario
-            $pdo = DB::connection('oracle')->getPdo();
-            $stmt = $pdo->prepare('
-                BEGIN 
-                    pkg_usuarios.crear_usuario(:nombre, :email, :password, :rol, :result); 
-                END;
-            ');
-
-            $nombre = $request->nombre;
-            $email = $request->email;
-            $password = Hash::make($request->password);
-            $rol = 'USUARIO'; // Por defecto
-            $result = null;
-
-            $stmt->bindParam(':nombre', $nombre);
-            $stmt->bindParam(':email', $email);
-            $stmt->bindParam(':password', $password);
-            $stmt->bindParam(':rol', $rol);
-            $stmt->bindParam(':result', $result, \PDO::PARAM_INT);
-
-            $stmt->execute();
-
-            if ($result == 1) {
-                return redirect()->route('login')->with('success', 'Usuario registrado exitosamente. Ahora puedes iniciar sesión.');
-            } elseif ($result == -2) {
-                return back()->with('error', 'El email ya está registrado')->withInput();
-            } else {
-                return back()->with('error', 'Error al registrar usuario')->withInput();
-            }
-
-        } catch (\Exception $e) {
-            return back()->with('error', 'Error: ' . $e->getMessage())->withInput();
-        }
-    }
-
-    public function logout()
-    {
-        Session::flush();
-        return redirect()->route('login')->with('success', 'Sesión cerrada correctamente');
     }
 }

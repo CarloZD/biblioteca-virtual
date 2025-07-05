@@ -19,6 +19,28 @@ class AuthController extends Controller
         return view('auth.register');
     }
 
+    private function getObjectProperty($obj, $property)
+    {
+        // Intentar con mayúsculas primero (Oracle típico)
+        $upperProperty = strtoupper($property);
+        if (property_exists($obj, $upperProperty)) {
+            return $obj->$upperProperty;
+        }
+        
+        // Intentar con minúsculas
+        $lowerProperty = strtolower($property);
+        if (property_exists($obj, $lowerProperty)) {
+            return $obj->$lowerProperty;
+        }
+        
+        // Intentar con el nombre original
+        if (property_exists($obj, $property)) {
+            return $obj->$property;
+        }
+        
+        return null;
+    }
+
     public function login(Request $request)
     {
         $request->validate([
@@ -29,55 +51,33 @@ class AuthController extends Controller
         try {
             // Obtener usuario por email
             $usuario = DB::connection('oracle')->select(
-                'SELECT * FROM usuarios WHERE UPPER(email) = UPPER(?) AND activo = 1',
+                'SELECT id, nombre, email, password, rol, activo FROM usuarios WHERE UPPER(email) = UPPER(?) AND activo = 1',
                 [$request->email]
             );
 
             if (empty($usuario)) {
-                return back()->withErrors(['email' => 'Usuario no encontrado o inactivo'])->withInput();
+                return back()->withErrors(['email' => 'Credenciales incorrectas'])->withInput();
             }
 
             $user = $usuario[0];
 
-            // Convertir objeto a array para manejo más fácil
-            $userArray = (array) $user;
-            
-            // Buscar las propiedades correctas (pueden estar en mayúsculas o minúsculas)
-            $userId = null;
-            $userName = null;
-            $userEmail = null;
-            $userPassword = null;
-            $userRole = null;
+            // Debug: Mostrar las propiedades disponibles
+            \Log::info('Propiedades del usuario:', (array)$user);
 
-            foreach($userArray as $key => $value) {
-                $keyUpper = strtoupper($key);
-                switch($keyUpper) {
-                    case 'ID':
-                        $userId = $value;
-                        break;
-                    case 'NOMBRE':
-                        $userName = $value;
-                        break;
-                    case 'EMAIL':
-                        $userEmail = $value;
-                        break;
-                    case 'PASSWORD':
-                        $userPassword = $value;
-                        break;
-                    case 'ROL':
-                        $userRole = $value;
-                        break;
-                }
-            }
+            // Obtener las propiedades de forma robusta
+            $userId = $this->getObjectProperty($user, 'id');
+            $userName = $this->getObjectProperty($user, 'nombre');
+            $userEmail = $this->getObjectProperty($user, 'email');
+            $userPassword = $this->getObjectProperty($user, 'password');
+            $userRole = $this->getObjectProperty($user, 'rol');
 
-            // Verificar que tenemos todos los datos necesarios
             if (!$userPassword) {
-                return back()->withErrors(['email' => 'Error: No se pudo obtener la contraseña del usuario'])->withInput();
+                return back()->withErrors(['email' => 'Error en la estructura de datos del usuario'])->withInput();
             }
 
             // Verificar contraseña
             if (!Hash::check($request->password, $userPassword)) {
-                return back()->withErrors(['email' => 'Contraseña incorrecta'])->withInput();
+                return back()->withErrors(['email' => 'Credenciales incorrectas'])->withInput();
             }
 
             // Crear sesión
@@ -92,6 +92,7 @@ class AuthController extends Controller
             return redirect()->route('dashboard')->with('success', 'Bienvenido ' . $userName);
 
         } catch (\Exception $e) {
+            \Log::error('Error en login: ' . $e->getMessage());
             return back()->withErrors(['email' => 'Error de conexión: ' . $e->getMessage()])->withInput();
         }
     }
@@ -100,30 +101,11 @@ class AuthController extends Controller
     {
         $request->validate([
             'nombre' => 'required|string|max:100',
-            'email' => 'required|email',
+            'email' => 'required|email|unique:oracle.usuarios,email',
             'password' => 'required|string|min:6|confirmed',
         ]);
 
         try {
-            // Verificar si el email ya existe
-            $existing = DB::connection('oracle')->select(
-                'SELECT COUNT(*) as count FROM usuarios WHERE UPPER(email) = UPPER(?)',
-                [$request->email]
-            );
-
-            $count = (array) $existing[0];
-            $countValue = null;
-            foreach($count as $key => $value) {
-                if (strtoupper($key) === 'COUNT') {
-                    $countValue = $value;
-                    break;
-                }
-            }
-
-            if ($countValue > 0) {
-                return back()->with('error', 'El email ya está registrado')->withInput();
-            }
-
             // Usar procedimiento almacenado para crear usuario
             $pdo = DB::connection('oracle')->getPdo();
             $stmt = $pdo->prepare('
