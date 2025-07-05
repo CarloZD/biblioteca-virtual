@@ -16,7 +16,7 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'sqlite'),
+    'default' => env('DB_CONNECTION', 'oracle'),
 
     /*
     |--------------------------------------------------------------------------
@@ -30,6 +30,22 @@ return [
     */
 
     'connections' => [
+
+    // Agregar esta configuración Oracle:
+        'oracle' => [
+            'driver'         => 'oracle',
+            'tns'            => env('DB_TNS', ''),
+            'host'           => env('DB_HOST', 'localhost'),
+            'port'           => env('DB_PORT', '1521'),
+            'database'       => env('DB_DATABASE', 'xe'),
+            'service_name'   => env('DB_SERVICE_NAME', 'XEPDB1'),  
+            'username'       => env('DB_USERNAME', 'biblioteca'),
+            'password'       => env('DB_PASSWORD', ''),
+            'charset'        => env('DB_CHARSET', 'AL32UTF8'),
+            'prefix'         => env('DB_PREFIX', ''),
+            'prefix_schema'  => env('DB_SCHEMA_PREFIX', ''),
+        ],
+
 
         'sqlite' => [
             'driver' => 'sqlite',
