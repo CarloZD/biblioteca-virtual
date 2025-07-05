@@ -14,6 +14,11 @@ class AuthController extends Controller
         return view('auth.login');
     }
 
+    public function showRegisterForm()
+    {
+        return view('auth.register');
+    }
+
     public function login(Request $request)
     {
         $request->validate([
@@ -22,9 +27,9 @@ class AuthController extends Controller
         ]);
 
         try {
-            // Obtener usuario por email
+            // Obtener usuario por email (Oracle devuelve propiedades en MAYÚSCULAS)
             $usuario = DB::connection('oracle')->select(
-                'SELECT id, nombre, email, password, rol, activo FROM usuarios WHERE UPPER(email) = UPPER(?) AND activo = 1',
+                'SELECT ID, NOMBRE, EMAIL, PASSWORD, ROL, ACTIVO FROM usuarios WHERE UPPER(email) = UPPER(?) AND activo = 1',
                 [$request->email]
             );
 
@@ -34,24 +39,68 @@ class AuthController extends Controller
 
             $user = $usuario[0];
 
-            // CORREGIDO: usar minúsculas (como muestra el debug)
-            if (!Hash::check($request->password, $user->password)) {
+            // Oracle devuelve propiedades en MAYÚSCULAS - usar la propiedad correcta
+            if (!Hash::check($request->password, $user->PASSWORD)) {
                 return back()->withErrors(['email' => 'Credenciales incorrectas'])->withInput();
             }
 
-            // Crear sesión - CORREGIDO: usar minúsculas
+            // Crear sesión usando las propiedades en MAYÚSCULAS
             Session::put([
-                'usuario_id' => $user->id,
-                'usuario_nombre' => $user->nombre,
-                'usuario_email' => $user->email,
-                'usuario_rol' => $user->rol,
+                'usuario_id' => $user->ID,
+                'usuario_nombre' => $user->NOMBRE,
+                'usuario_email' => $user->EMAIL,
+                'usuario_rol' => $user->ROL,
                 'usuario_logueado' => true
             ]);
 
-            return redirect()->route('dashboard')->with('success', 'Bienvenido ' . $user->nombre);
+            return redirect()->route('dashboard')->with('success', 'Bienvenido ' . $user->NOMBRE);
 
         } catch (\Exception $e) {
             return back()->withErrors(['email' => 'Error de conexión: ' . $e->getMessage()])->withInput();
+        }
+    }
+
+    public function register(Request $request)
+    {
+        $request->validate([
+            'nombre' => 'required|string|max:100',
+            'email' => 'required|email|unique:oracle.usuarios,email',
+            'password' => 'required|string|min:6|confirmed',
+        ]);
+
+        try {
+            // Usar procedimiento almacenado para crear usuario
+            $pdo = DB::connection('oracle')->getPdo();
+            $stmt = $pdo->prepare('
+                BEGIN 
+                    pkg_usuarios.crear_usuario(:nombre, :email, :password, :rol, :result); 
+                END;
+            ');
+
+            $nombre = $request->nombre;
+            $email = $request->email;
+            $password = Hash::make($request->password);
+            $rol = 'USUARIO'; // Por defecto
+            $result = null;
+
+            $stmt->bindParam(':nombre', $nombre);
+            $stmt->bindParam(':email', $email);
+            $stmt->bindParam(':password', $password);
+            $stmt->bindParam(':rol', $rol);
+            $stmt->bindParam(':result', $result, \PDO::PARAM_INT);
+
+            $stmt->execute();
+
+            if ($result == 1) {
+                return redirect()->route('login')->with('success', 'Usuario registrado exitosamente. Ahora puedes iniciar sesión.');
+            } elseif ($result == -2) {
+                return back()->with('error', 'El email ya está registrado')->withInput();
+            } else {
+                return back()->with('error', 'Error al registrar usuario')->withInput();
+            }
+
+        } catch (\Exception $e) {
+            return back()->with('error', 'Error: ' . $e->getMessage())->withInput();
         }
     }
 
